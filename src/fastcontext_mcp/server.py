@@ -160,27 +160,30 @@ def handle_request(message: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def read_message(stdin: Any) -> dict[str, Any] | None:
-    headers: dict[str, str] = {}
-    while True:
-        line = stdin.buffer.readline()
-        if line == b"":
-            return None
-        if line in {b"\r\n", b"\n"}:
-            break
-        name, _, value = line.decode("ascii").partition(":")
-        headers[name.lower()] = value.strip()
-
-    length_text = headers.get("content-length")
-    if length_text is None:
-        raise McpError(-32700, "Missing Content-Length header")
-    body = stdin.buffer.read(int(length_text))
-    return json.loads(body.decode("utf-8"))
+    first = stdin.buffer.readline()
+    if first == b"":
+        return None
+    if first.lower().startswith(b"content-length:"):
+        headers: dict[str, str] = {}
+        headers["content-length"] = first.decode("ascii").partition(":")[2].strip()
+        while True:
+            line = stdin.buffer.readline()
+            if line in {b"\r\n", b"\n"}:
+                break
+            name, _, value = line.decode("ascii").partition(":")
+            headers[name.lower()] = value.strip()
+        length_text = headers.get("content-length")
+        if length_text is None:
+            raise McpError(-32700, "Missing Content-Length header")
+        body = stdin.buffer.read(int(length_text))
+        return json.loads(body.decode("utf-8"))
+    # Official MCP stdio transport: newline-delimited JSON.
+    return json.loads(first.decode("utf-8"))
 
 
 def write_message(stdout: Any, message: dict[str, Any]) -> None:
     body = json.dumps(message, separators=(",", ":")).encode("utf-8")
-    stdout.buffer.write(f"Content-Length: {len(body)}\r\n\r\n".encode("ascii"))
-    stdout.buffer.write(body)
+    stdout.buffer.write(body + b"\n")
     stdout.buffer.flush()
 
 
@@ -205,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.print_health:
         print(json.dumps(health(), indent=2, sort_keys=True))
         return 0
+    print(f"{SERVER_NAME} v{SERVER_VERSION} running on stdio", file=sys.stderr, flush=True)
     serve()
     return 0
 
