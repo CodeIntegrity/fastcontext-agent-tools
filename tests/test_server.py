@@ -24,6 +24,18 @@ from fastcontext_mcp.server import handle_request
 
 
 class ServerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp_stats = tempfile.TemporaryDirectory()
+        self._env_patch = mock.patch.dict(
+            os.environ,
+            {"FASTCONTEXT_STATS_FILE": str(Path(self._tmp_stats.name) / "stats.json")},
+        )
+        self._env_patch.start()
+
+    def tearDown(self) -> None:
+        self._env_patch.stop()
+        self._tmp_stats.cleanup()
+
     def test_parse_citations_from_final_answer(self) -> None:
         text = """
         notes
@@ -105,6 +117,7 @@ class ServerTests(unittest.TestCase):
         names = {tool["name"] for tool in response["result"]["tools"]}
         self.assertIn("fastcontext_health", names)
         self.assertIn("fastcontext_explore", names)
+        self.assertIn("fastcontext_stats", names)
 
     def test_health_tool_returns_json_text(self) -> None:
         response = handle_request(
@@ -203,6 +216,56 @@ class ServerTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {}, clear=True):
                 with mock.patch("os.getcwd", return_value=str(cwd)):
                     self.assertEqual(resolve_repo_path(str(child)), child.resolve())
+
+    def test_fastcontext_stats_tool_call(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            stats_file = Path(tmp_dir) / "stats.json"
+            with mock.patch.dict(os.environ, {"FASTCONTEXT_STATS_FILE": str(stats_file)}):
+                response = handle_request(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 10,
+                        "method": "tools/call",
+                        "params": {"name": "fastcontext_stats", "arguments": {}},
+                    }
+                )
+                self.assertIsNotNone(response)
+                payload = json.loads(response["result"]["content"][0]["text"])
+                self.assertIn("global", payload)
+                self.assertEqual(payload["global"]["total_calls"], 0)
+
+                # Test reset via tool call
+                reset_resp = handle_request(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 11,
+                        "method": "tools/call",
+                        "params": {"name": "fastcontext_stats", "arguments": {"reset": True}},
+                    }
+                )
+                self.assertIsNotNone(reset_resp)
+                reset_payload = json.loads(reset_resp["result"]["content"][0]["text"])
+                self.assertTrue(reset_payload["ok"])
+
+    def test_run_fastcontext_includes_savings(self) -> None:
+        completed = CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="<final_answer>\nsrc/main.py:10-20\n</final_answer>\n",
+            stderr="",
+        )
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as stats_dir:
+            stats_file = Path(stats_dir) / "stats.json"
+            with mock.patch.dict(
+                os.environ,
+                {"FASTCONTEXT_ALLOWED_ROOTS": root, "FASTCONTEXT_STATS_FILE": str(stats_file)},
+            ):
+                with mock.patch.object(runtime, "_fastcontext_available", return_value=True):
+                    with mock.patch("fastcontext_mcp.runtime.subprocess.run", return_value=completed):
+                        result = run_fastcontext({"repo_path": root, "query": "Find main"})
+                        self.assertIn("savings", result)
+                        self.assertIn("tokens_saved", result["savings"])
+                        self.assertIn("compression_ratio", result["savings"])
 
 
 if __name__ == "__main__":

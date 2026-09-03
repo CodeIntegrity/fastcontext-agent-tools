@@ -74,6 +74,14 @@ Use `fastcontext_explore_with_trace` when a trajectory is needed:
 }
 ```
 
+Use `fastcontext_stats` to inspect cumulative usage and context savings:
+
+```json
+{
+  "repo_path": "/absolute/path/to/repo"
+}
+```
+
 ## Interpreting Results
 
 FastContext normally returns a `<final_answer>` citation block such as:
@@ -84,6 +92,7 @@ tests/test_router.py:101-119
 ```
 
 After receiving citations:
+- The return payload also contains a `savings` summary detailing tokens saved and compression ratio.
 
 - Read the cited ranges and surrounding context.
 - Verify that the cited code actually controls the requested behavior.

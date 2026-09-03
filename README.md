@@ -132,6 +132,25 @@ output.
 Same as `fastcontext_explore`, but saves a FastContext JSONL trajectory. Relative
 `trajectory_path` values are resolved inside `repo_path`.
 
+### `fastcontext_stats`
+
+Gets cumulative exploration statistics, token savings, and compression ratios across sessions, or resets them.
+
+```json
+{
+  "repo_path": "/path/to/repo",
+  "reset": false
+}
+```
+
+CLI commands are also supported:
+
+```bash
+fastcontext-mcp --stats        # View formatted statistics table
+fastcontext-mcp --stats-json   # Output statistics as JSON
+fastcontext-mcp --stats-reset  # Reset cumulative statistics
+```
+
 ## Codex Skill
 
 The bundled skill lives at:

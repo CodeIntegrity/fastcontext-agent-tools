@@ -7,9 +7,12 @@ from typing import Any
 
 from .runtime import (
     McpError,
+    get_stats,
     health,
+    reset_stats,
     run_fastcontext,
 )
+from .stats import format_stats_text
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "fastcontext-mcp"
@@ -103,6 +106,25 @@ def tools() -> list[dict[str, Any]]:
                 "additionalProperties": False,
             },
         },
+        {
+            "name": "fastcontext_stats",
+            "description": "Get or reset cumulative FastContext exploration statistics and context savings.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "repo_path": {
+                        "type": "string",
+                        "description": "Optional repository path to filter statistics for.",
+                    },
+                    "reset": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Reset all stored statistics when set to true.",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
     ]
 
 
@@ -114,6 +136,11 @@ def call_tool(name: str, arguments: dict[str, Any] | None) -> dict[str, Any]:
         return json_text_result(run_fastcontext(arguments))
     if name == "fastcontext_explore_with_trace":
         return json_text_result(run_fastcontext(arguments, force_trace=True))
+    if name == "fastcontext_stats":
+        if bool(arguments.get("reset", False)):
+            return json_text_result(reset_stats())
+        repo_arg = arguments.get("repo_path")
+        return json_text_result(get_stats(str(repo_arg) if repo_arg else None))
     raise McpError(-32601, f"Unknown tool: {name}")
 
 
@@ -204,9 +231,34 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Print FastContext configuration health as JSON and exit.",
     )
+    parser.add_argument(
+        "--stats",
+        action="store_true",
+        help="Print FastContext usage and savings statistics and exit.",
+    )
+    parser.add_argument(
+        "--stats-json",
+        action="store_true",
+        help="Print FastContext statistics as JSON and exit.",
+    )
+    parser.add_argument(
+        "--stats-reset",
+        action="store_true",
+        help="Reset stored FastContext usage statistics and exit.",
+    )
     args = parser.parse_args(argv)
     if args.print_health:
         print(json.dumps(health(), indent=2, sort_keys=True))
+        return 0
+    if args.stats_reset:
+        reset_stats()
+        print("FastContext statistics reset successfully.")
+        return 0
+    if args.stats_json:
+        print(json.dumps(get_stats(), indent=2, sort_keys=True))
+        return 0
+    if args.stats:
+        print(format_stats_text(get_stats()))
         return 0
     print(f"{SERVER_NAME} v{SERVER_VERSION} running on stdio", file=sys.stderr, flush=True)
     serve()

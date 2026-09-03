@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .stats import StatsStore, analyze_trajectory
 FASTCONTEXT_MODULE = "fastcontext_mcp.fastcontext_cli"
 
 
@@ -235,6 +236,8 @@ def run_fastcontext(args: dict[str, Any], *, force_trace: bool = False) -> dict[
 
     output = completed.stdout.strip()
     citations, citation_warnings = validate_citations(repo, parse_citations(output))
+    savings = analyze_trajectory(traj, output)
+    StatsStore().record_call(str(repo), completed.returncode == 0, savings)
     result = {
         "ok": completed.returncode == 0,
         "returncode": completed.returncode,
@@ -245,5 +248,16 @@ def run_fastcontext(args: dict[str, Any], *, force_trace: bool = False) -> dict[
         "raw_output": output,
         "stderr": completed.stderr.strip(),
         "trajectory_path": str(traj),
+        "savings": savings,
     }
     return result
+
+
+def get_stats(repo_path: str | None = None) -> dict[str, Any]:
+    return StatsStore().get_stats(repo_path)
+
+
+def reset_stats() -> dict[str, Any]:
+    store = StatsStore()
+    store.reset()
+    return {"ok": True, "message": "Statistics reset successfully."}
